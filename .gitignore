@@ -1,0 +1,9 @@
+.DS_Store
+
+.venv/
+__pycache__
+.ipynb_checkpoints/
+.pytest_cache/
+*.parquet
+
+TODO.md

@@ -1,0 +1,40 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "dexsim"
+version = "0.1.0"
+description = 'API to create and interact with Uniswap based decentralized exchange'
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+keywords = [
+  "uniswap",
+  "agent-based modeling",
+  "ethereum",
+  "solidity",
+  "simulation",
+]
+authors = [
+  { name = "Dave Bryson", email = "davebryson@users.noreply.github.com" },
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: Implementation :: CPython",
+  "Programming Language :: Python :: Implementation :: PyPy",
+]
+
+dependencies = ["simular-evm>=0.2.6", "omegaconf"]
+
+[tool.hatch.envs.default]
+dependencies = ["pytest"]
+
+[tool.hatch.envs.default.scripts]
+test = "pytest {args:tests}"
+
+[[tool.hatch.envs.all.matrix]]
+python = ["3.11", "3.12"]
