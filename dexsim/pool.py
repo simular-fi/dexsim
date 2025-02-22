@@ -395,7 +395,8 @@ class Pool:
             token_id
         )
 
-        # call 'collect'
+        # call to collect tokens based on what's owed the caller
+        # internally this also interacts with 'pool' contract's collect.
         result = self.nftposition.collect.transact(
             (token_id, agent, t0owed, t1owed), caller=agent
         )

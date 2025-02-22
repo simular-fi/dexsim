@@ -17,7 +17,7 @@ def test_dex_setup(config_filename):
 
 def test_liquidity(config_filename):
     dex = DEX(config_filename)
-    bob = dex.create_one_or_more_addresses()
+    bob = dex.create_wallet()
 
     # get the eth/usdc pool
     eth_usdc_pool = dex.pools.eth_usdc

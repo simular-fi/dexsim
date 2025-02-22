@@ -38,3 +38,9 @@ test = "pytest {args:tests}"
 
 [[tool.hatch.envs.all.matrix]]
 python = ["3.11", "3.12"]
+
+[tool.hatch.build.targets.sdist]
+exclude = ["/.github", "/docs", "/tests"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["dexsim"]

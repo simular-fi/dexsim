@@ -93,27 +93,31 @@ class DEX:
                 self.__evm, t0, t1, fee, self.__router, self.__nft, deployer
             )
 
-    def create_one_or_more_addresses(
-        self, address=None, num=1, wei=int(1e18)
-    ) -> List[str] | str:
-        """Create 1 or more wallet addresses in the EVM.  If you pass 'address' it will only
-        create 1 wallet entry for that address.
-
+    def create_wallet(self, address: str = None, wei: float = int(1e18)) -> str:
+        """Create a single account
         Args:
-            address: optional (default: None): the address you want to create in the EVM
-            num: optional (default: 1): the number of wallets to create
-            wei: optional (default: 1e18): amount to fund the account with
+            address: optional, If set will create the wallet with the given address
+            wei: optional, (default: 1e18): funds the wallet with the amount of wei.
 
         Returns:
-            Either a list or single wallet address
+            wallet address
         """
-        if num > 1:
-            return create_many_accounts(self.__evm, num, value=wei)
-
         if address:
             assert is_address(address), f"{address} is not a valid wallet address"
 
         return create_account(self.__evm, address=address, value=wei)
+
+    def create_many_wallets(self, num, wei=int(1e18)) -> List[str]:
+        """Create `num` of wallets in the EVM.
+
+        Args:
+            num: optional (default: 1): the number of wallets to create
+            wei: optional (default: 1e18): amount to fund the account with
+
+        Returns:
+            a list of wallet addresses
+        """
+        return create_many_accounts(self.__evm, num, value=wei)
 
     def list_pools(self) -> List[str]:
         """List all pools by name
