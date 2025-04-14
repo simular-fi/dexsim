@@ -1,0 +1,65 @@
+# ******* DO NOT EDIT ********
+# Pre-deployed pools that are not initialized with a price
+usdc_dai_100:
+  token0:
+    symbol: usdc
+    address: "0x5f4e6ec37B96c8e960A233899135930F43bdE009"
+  token1:
+    symbol: dai
+    address: "0xD20926ca613E2EEDA20430282343c1791D422046"
+  fee: 100
+  pool: "0x6c6bad566beb4becc806e56aa0f9690b5c3beadd"
+usdc_dai_500:
+  token0:
+    symbol: usdc
+    address: "0x5f4e6ec37B96c8e960A233899135930F43bdE009"
+  token1:
+    symbol: dai
+    address: "0xD20926ca613E2EEDA20430282343c1791D422046"
+  fee: 500
+  pool: "0x55f916895899207f352c138a360893e35a4eb323"
+usdc_weth_500:
+  token0:
+    symbol: usdc
+    address: "0x5f4e6ec37B96c8e960A233899135930F43bdE009"
+  token1:
+    symbol: weth
+    address: "0xe7D9A443421ee98728A32488d6f34726D760cAF3"
+  fee: 500
+  pool: "0xe0568c5411db8a2da5a6a1cb875ad440aee99649"
+dai_weth_500:
+  token0:
+    symbol: dai
+    address: "0xD20926ca613E2EEDA20430282343c1791D422046"
+  token1:
+    symbol: weth
+    address: "0xe7D9A443421ee98728A32488d6f34726D760cAF3"
+  fee: 500
+  pool: "0x5341c13659b1cd8c3a356dd85acfd79a004ec6cd"
+weth_wbtc_500:
+  token0:
+    symbol: weth
+    address: "0xe7D9A443421ee98728A32488d6f34726D760cAF3"
+  token1:
+    symbol: wbtc
+    address: "0xfe37b3f873A52678bdF000811B91b2D2c8C03CF8"
+  fee: 500
+  pool: "0xefc5739a6be6a2784a259acb296d017a24713f57"
+dai_wbtc_500:
+  token0:
+    symbol: dai
+    address: "0xD20926ca613E2EEDA20430282343c1791D422046"
+  token1:
+    symbol: wbtc
+    address: "0xfe37b3f873A52678bdF000811B91b2D2c8C03CF8"
+  fee: 500
+  pool: "0xf1f0c2ac9d468c44919aa0a074a0d87120cf4127"
+usdc_wbtc_500:
+  token0:
+    symbol: usdc
+    address: "0x5f4e6ec37B96c8e960A233899135930F43bdE009"
+  token1:
+    symbol: wbtc
+    address: "0xfe37b3f873A52678bdF000811B91b2D2c8C03CF8"
+  fee: 500
+  pool: "0xb423a95073006a84d7640083c45d338cc6b76d0f"

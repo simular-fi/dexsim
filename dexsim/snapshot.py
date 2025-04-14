@@ -1,19 +1,38 @@
+"""
+Used to create snapshots.  You should only use this
+if you intend to *rebuild* snapshots.
+"""
+
 import os
 from pathlib import Path
+from omegaconf import OmegaConf, DictConfig
 from simular import PyEvm, create_account
 
-from dexsim.abis import (
+from .utils import FEE_RANGE
+from .abis import (
     uniswap_factory_contract,
     uniswap_nftpositionmanager,
     uniswap_router_contract,
+    erc20_token,
 )
-from dexsim.pool import FEE_RANGE
 
 PACKAGEDIR = Path(__file__).parent.absolute()
-BASE_STATE = PACKAGEDIR.joinpath("base.json")
+
+BASE_STATE = PACKAGEDIR.joinpath("state", "base.json")
+POOL_STATE = PACKAGEDIR.joinpath("state", "pool_snapshot.json")
+TOKENS = PACKAGEDIR.joinpath("state", "tokens.yaml")
+PAIRS = PACKAGEDIR.joinpath("state", "pairs.yaml")
 
 
-def load_evm_from_snapshot(path_fn: str = BASE_STATE) -> PyEvm:
+def load_token_state() -> DictConfig:
+    return OmegaConf.load(TOKENS)
+
+
+def load_token_pair_state() -> DictConfig:
+    return OmegaConf.load(PAIRS)
+
+
+def evm_from_snapshot(path_fn: str = BASE_STATE) -> PyEvm:
     """
     Load EVM with saved chain state.
 
@@ -25,6 +44,12 @@ def load_evm_from_snapshot(path_fn: str = BASE_STATE) -> PyEvm:
     with open(path_fn) as b:
         state = b.read()
     return PyEvm.from_snapshot(state)
+
+
+def evm_from_pool_snapshot() -> PyEvm:
+    """Load EVM state with pre-deployed pools from a snapshot"""
+    with open(POOL_STATE) as fh:
+        return PyEvm.from_snapshot(fh.read())
 
 
 def create_uniswap_snapshot():
@@ -71,3 +96,68 @@ def create_uniswap_snapshot():
     snap = evm.create_snapshot()
     with open(f"{BASE_STATE}", "w") as f:
         f.write(snap)
+
+
+def create_tokens_and_pools():
+    """
+    Create a snapshot with a pre-deployed set of tokens and pools
+
+    1. Start with base snapshop
+    2. Create all the tokens needed (capture addresses)
+    3. Create a pool for each pair and fee
+       1. sort pair address
+       2. create pool with factory.  (capture/store pool address and pair names / fee)
+    4. snapshot new state
+
+    Python dict:
+    'eth_usdc_500' => 0x1234.... (address)
+    """
+    evm = evm_from_snapshot()
+    deployer = create_account(evm)
+
+    tokens = {}
+    # deploy base tokens
+    for sym in ["usdc", "dai", "weth", "wbtc"]:
+        addy = erc20_token(evm).deploy(sym, caller=deployer)
+        tokens[sym] = {"symbol": sym, "address": addy}
+
+    with open("./tokens.yaml", "w") as fp:
+        config = OmegaConf.create(tokens)
+        OmegaConf.save(config=config, f=fp)
+
+    # recognized pairs
+    pairs = [
+        ("usdc", "dai", 100),
+        ("usdc", "dai", 500),
+        ("usdc", "weth", 500),
+        ("dai", "weth", 500),
+        ("wbtc", "weth", 500),
+        ("wbtc", "dai", 500),
+        ("wbtc", "usdc", 500),
+    ]
+
+    poolpairs = {}
+    for ta, tb, fee in pairs:
+        if bytes.fromhex(tokens[ta]["address"][2:]) < bytes.fromhex(
+            tokens[tb]["address"][2:]
+        ):
+            pair = {"token0": tokens[ta], "token1": tokens[tb], "fee": fee, "pool": ""}
+        else:
+            pair = {"token0": tokens[tb], "token1": tokens[ta], "fee": fee, "pool": ""}
+
+        pool_address = uniswap_factory_contract(evm).createPool.transact(
+            pair["token0"]["address"], pair["token1"]["address"], fee, caller=deployer
+        )
+        pair["pool"] = pool_address.output
+        name = f"{pair['token0']['symbol']}_{pair['token1']['symbol']}_{fee}"
+        poolpairs[name] = pair
+
+    with open("./pairs.yaml", "w") as fp:
+        config = OmegaConf.create(poolpairs)
+        OmegaConf.save(config=config, f=fp)
+
+    # save snapshot
+    print(" ... saving base state ...")
+    snappools = evm.create_snapshot()
+    with open("./pool_snapshot.json", "w") as f:
+        f.write(snappools)

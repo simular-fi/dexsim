@@ -1,23 +1,20 @@
 from typing import List
 from eth_utils import is_address
 from omegaconf import OmegaConf, DictConfig
-from simular import create_account, create_many_accounts, PyEvm
+from simular import create_account, create_many_accounts
 
-from dexsim.pool import Pool, Token, FEE_RANGE
-from dexsim.snapshot import load_evm_from_snapshot
-from dexsim.abis import uniswap_router_contract, uniswap_nftpositionmanager
-
-# Fixed fees recognized by Uniswap v3
-UNISWAP_FEES = [0.01, 0.05, 0.3, 1.0]
+from .pool import Pool
+from .utils import price_to_sqrtp
+from .snapshot import evm_from_pool_snapshot, load_token_pair_state
+from .abis import uniswap_router_contract, uniswap_nftpositionmanager
 
 
-def load_configuration(evm: PyEvm, fn: str) -> DictConfig:
+def load_configuration(fn: str) -> DictConfig:
     if fn[-5:] != ".yaml":
         raise ValueError("Expected a YAML file: .yaml")
 
     try:
         config = OmegaConf.load(fn)
-        config.simulator.pool_fees = UNISWAP_FEES
         return config.simulator
     except Exception as e:
         raise ValueError(
@@ -48,12 +45,11 @@ class DEX:
     to setup and interact with pools in a model.
 
     Pools are created/configured via the YAML configuration file.
-    The DEX has a Dict of pools keyed by the name specified in the
-    configuration file.
+    The DEX has a Dict of pools keyed by the token names and fee.
 
     To interact with a pool you use the name of the pool configured in the yaml file.
-    For example,   `dex.pools.eth_usdc`.  At his point, you can interact
-    with all the pool functionality. LP, swaps, etc...
+    For example,   `dex.pools.eth_usdc_500`. You can see the list of all pool names: `dex.list_pools()`
+    You can interact with all the pool functionality. LP, swaps, etc...
 
     Attributes:
         config (DictConfig): The configuration object
@@ -67,30 +63,39 @@ class DEX:
             conf_file: the path/name of the yaml configuration file
         """
         # setup the EVM and needed Uniswap contracts
-        self.__evm = load_evm_from_snapshot()
+        self.__evm = evm_from_pool_snapshot()
+
+        # load information about deployed pools
+        pairs = load_token_pair_state()
 
         # load the config file
-        self.config = load_configuration(self.__evm, conf_file)
+        self.config = load_configuration(conf_file)
         self.pools = PoolsHelper()
 
-        # load core contracts
+        # initialize pools
         self.__router = uniswap_router_contract(self.__evm)
         self.__nft = uniswap_nftpositionmanager(self.__evm)
+        deployer = create_account(self.__evm)
 
-        for n, pc in self.config.pools.items():
-            price = pc.price
-            f = pc.get("fee", 0.05)
-
-            fee = int(f * 10_000)
-            assert fee in FEE_RANGE, "Invalid Unswap v3 fee"
-
-            deployer = create_account(self.__evm)
-
-            t0 = Token(pc.tokens[0], price)
-            t1 = Token(pc.tokens[1], 1.0)
-
-            self.pools[n] = Pool(
-                self.__evm, t0, t1, fee, self.__router, self.__nft, deployer
+        for p, vals in self.config.pools.items():
+            token_pair = pairs.get(p, None)
+            if not token_pair:
+                raise KeyError(f"Config file: '{token_pair}' is not a recognized pool")
+            if len(vals) < 2:
+                raise Exception(
+                    "Price values in the config file should be in the format '[price, price]'"
+                )
+            sqrtp = price_to_sqrtp(vals[1] / vals[0])
+            self.pools[p] = Pool(
+                self.__evm,
+                token_pair.pool,
+                token_pair.token0.address,
+                token_pair.token1.address,
+                token_pair.fee,
+                sqrtp,
+                self.__router,
+                self.__nft,
+                deployer,
             )
 
     def create_wallet(self, address: str = None, wei: float = int(1e18)) -> str:

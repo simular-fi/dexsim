@@ -3,58 +3,29 @@ Uniswap v3 pool.  Represents a token pair and fee schedule.
 For simplicty, all tokens use 10^18 decimals.
 """
 
-from eth_utils import is_address
 from typing import Tuple
-from dataclasses import dataclass
+from eth_utils import is_address
 
-from dexsim.abis import uniswap_token
-from dexsim.utils import (
-    price_to_sqrtp,
+
+from . import Address
+from .abis import erc20_token
+from .utils import (
     sqrtp_to_price,
     price_to_tick_with_spacing,
     as_18,
     from_18,
-    are_sorted_tokens,
+    get_spacing_for_fee,
+    is_valid_tick,
+    tick_to_price,
+    calculate_liquidity_balance,
 )
+
+
 from simular import PyEvm, Contract, contract_from_inline_abi
 
 # purposely far in the future to make
 # sure the trade is within the deadline.
 EXECUTE_SWAP_DEADLINE = int(1e32)
-
-# Uniswap v3 fee schedule and spacing
-FEE_RANGE = [100, 500, 3000, 10_000]
-FEE_TICK_SPACING = [1, 10, 60, 200]
-
-
-def get_spacing_for_fee(fee: int) -> int:
-    """
-    Return the tick spacing for the given fee
-    """
-    assert fee in FEE_RANGE, "not a valid fee"
-    return FEE_TICK_SPACING[FEE_RANGE.index(fee)]
-
-
-def get_fee_for_spacing(spacing: int) -> int:
-    """
-    Return the fee for the given tick spacing
-    """
-    assert spacing in FEE_TICK_SPACING, "not a valid tick spacing"
-    return FEE_RANGE[FEE_TICK_SPACING.index(spacing)]
-
-
-@dataclass
-class Token:
-    """
-    Meta information for a token
-    """
-
-    symbol: str
-    start_price: 1
-
-    @property
-    def initial_price(self):
-        return as_18(self.start_price)
 
 
 def pool_contract(evm):
@@ -62,8 +33,14 @@ def pool_contract(evm):
     return contract_from_inline_abi(
         evm,
         [
+            "function ticks(int24)(uint128, int128, uint256, uint256, int56, uint160, uint32, bool)",
             "function liquidity()(uint128)",
+            "function fee()(uint24)",
+            "function token0()(address)",
+            "function token1()(address)",
+            "function initialize(uint160)",
             "function slot0()(uint160,int24,uint16,uint16,uint16,uint8,bool)",
+            "function approve(address,uint256)(bool)",
         ],
     )
 
@@ -78,10 +55,9 @@ class Pool:
     - swap tokens in both directions
     """
 
-    name: str  # auto-generated: e.g. DAI_USDC_500
-    step: int  # this is the model step
-    token0: Contract
-    token1: Contract
+    token0: Address
+    token1: Address
+    sqrtp: int
     fee: int
     router: Contract
     nftposition: Contract
@@ -90,68 +66,47 @@ class Pool:
     def __init__(
         self,
         _evm: PyEvm,
-        _token_a: Token,
-        _token_b: Token,
+        _pool_address: Address,
+        _token_a: Address,
+        _token_b: Address,
         _fee: int,
+        _sqrtp: int,
         _router: Contract,
         _nftposition: Contract,
-        _deployer_address: str,
+        _deployer_address: Address,
     ):
         """
-        Create and deploy a new pool.
+        Initialize the new pool.
 
         This is done automatically by the DEX
         """
-        assert _fee in FEE_RANGE, "Not a valid pool fee"
-        assert (
-            _token_b.start_price == 1
-        ), "token b should always have a starting price of 1"
-
-        self.name = f"{_token_a.symbol}_{_token_b.symbol}_{_fee}"
-        self.step = 0
-        self.fee = _fee
+        assert is_address(
+            _token_a
+        ), "Not a valid address for Token A. Check naming in the configuration file"
+        assert is_address(
+            _token_b
+        ), "Not a valid address for Token B. Check naming in the configuration file"
         assert is_address(
             _deployer_address
         ), "Not a valid wallet address for the pool deployer"
 
+        self.fee = _fee
+        self.sqrtp = _sqrtp
+        self.token0 = _token_a
+        self.token1 = _token_b
         self.deployers_address = _deployer_address
+
         self.router = _router
         self.nftposition = _nftposition
 
-        _a = uniswap_token(_evm)
-        _b = uniswap_token(_evm)
-        _a.deploy(_token_a.symbol, caller=_deployer_address)
-        _b.deploy(_token_b.symbol, caller=_deployer_address)
+        self.pool_contract = pool_contract(
+            _evm,
+        ).at(_pool_address)
 
-        # IMPORTANT: addresses are required to be sorted. If not, it can
-        # cause a pool key issue.  We sort the addresses here
-        # and re-assign symbol names if needed to match the
-        # initial input
-        if bytes.fromhex(_a.address[2:]) < bytes.fromhex(_b.address[2:]):
-            self.token0 = _a
-            self.token1 = _b
-        else:
-            self.token0 = _b
-            self.token0.update_symbol.transact(
-                _token_a.symbol, caller=_deployer_address
-            )
-            self.token1 = _a
-            self.token1.update_symbol.transact(
-                _token_b.symbol, caller=_deployer_address
-            )
-
-        # calculate initial price as SQRTPx96
-        sqrtp = price_to_sqrtp(_token_b.initial_price / _token_a.initial_price)
-
-        # create the pool
-        pool_address = self.nftposition.createAndInitializePoolIfNecessary.transact(
-            self.token0.address,
-            self.token1.address,
-            _fee,
-            sqrtp,
-            caller=_deployer_address,
-        ).output
-        self.pool_contract = pool_contract(_evm).at(pool_address)
+        self.pool_contract.initialize.transact(
+            self.sqrtp, caller=self.deployers_address
+        )
+        self.token_contract = erc20_token(_evm)
 
     def get_sqrtp_tick(self) -> Tuple[int, int]:
         """
@@ -163,15 +118,37 @@ class Pool:
         slot_info = self.pool_contract.slot0.call()
         return (slot_info[0], slot_info[1])
 
-    def exchange_prices(self) -> Tuple[float, float]:
+    def liquidity(self) -> int:
         """
-        Return the exchange prices automatically adjusted for decimals (1e18)
-        :return (price of token0, price of token1)
+        Returns the in-range liquidity available to the pool
+        This is NOT the total liquidity across all ticks
+        """
+        return self.pool_contract.liquidity.call()
+
+    def get_amount_to_target(self, tick):
+        spacing = get_spacing_for_fee(self.fee)
+        (
+            _liqGrs,
+            liqNet,
+            _,
+            _,
+            _,
+            _,
+            _,
+            initialized,
+        ) = self.pool_contract.ticks.call(tick)
+
+        return liqNet, initialized
+
+    def exchange_rates(self) -> Tuple[float, float]:
+        """
+        Prices in terms of the other.
+        - The first value is the amount of token0 for 1 token1
+        - Second value is the amount of token1 for 1 token0
         """
         sqrtp, _ = self.get_sqrtp_tick()
         t1 = sqrtp_to_price(sqrtp)
-        t0 = 1e18 / t1 / 1e18
-        return (t0, t1)
+        return (1 / t1, t1)
 
     def mint_tokens(self, amt_t0: float, amt_t1: float, agent: str):
         """
@@ -191,8 +168,8 @@ class Pool:
         at0 = as_18(amt_t0)
         at1 = as_18(amt_t1)
 
-        self.token0.mint.transact(agent, at0, caller=agent)
-        self.token1.mint.transact(agent, at1, caller=agent)
+        self.token_contract.at(self.token0).mint.transact(agent, at0, caller=agent)
+        self.token_contract.at(self.token1).mint.transact(agent, at1, caller=agent)
 
     def burn_tokens(self, amt_t0: float, amt_t1: float, agent: str):
         """
@@ -207,15 +184,15 @@ class Pool:
         at0 = as_18(amt_t0)
         at1 = as_18(amt_t1)
 
-        bal0 = self.token0.balanceOf.call(agent)
-        bal1 = self.token1.balanceOf.call(agent)
+        bal0 = self.token_contract.at(self.token0).balanceOf.call(agent)
+        bal1 = self.token_contract.at(self.token1).balanceOf.call(agent)
 
         if at0 > 0 and bal0 >= at0:
-            self.token0.burn.transact(agent, at0, caller=agent)
+            self.token_contract.at(self.token0).burn.transact(agent, at0, caller=agent)
         if at1 > 0 and bal1 >= at1:
-            self.token1.burn.transact(agent, at1, caller=agent)
+            self.token_contract.at(self.token1).burn.transact(agent, at1, caller=agent)
 
-    def token_pair_balance(self, owner: str) -> Tuple[int, int]:
+    def token_pair_balance(self, agent: str) -> Tuple[int, int]:
         """
         This is a helper function to get the ERC20 token balances for the
         given owner. This is NOT the balance of tokens in a given liquidity position.
@@ -227,8 +204,8 @@ class Pool:
         Returns:
             (token0, token1) balances for 'owner'.  Balances are automatically scaled down from decimal places
         """
-        bal0 = self.token0.balanceOf.call(owner)
-        bal1 = self.token1.balanceOf.call(owner)
+        bal0 = self.token_contract.at(self.token0).balanceOf.call(agent)
+        bal1 = self.token_contract.at(self.token1).balanceOf.call(agent)
         return (
             from_18(bal0),
             from_18(bal1),
@@ -241,7 +218,16 @@ class Pool:
         Returns:
             (token0, token1) balances for the pool.  Balances are automatically scaled down from decimal places
         """
-        return self.token_pair_balance(self.pool_contract.address)
+        bal0 = self.token_contract.at(self.token0).balanceOf.call(
+            self.pool_contract.address
+        )
+        bal1 = self.token_contract.at(self.token1).balanceOf.call(
+            self.pool_contract.address
+        )
+        return (
+            from_18(bal0),
+            from_18(bal1),
+        )
 
     def mint_liquidity_position(
         self,
@@ -250,50 +236,77 @@ class Pool:
         low_price: float,
         high_price: float,
         agent: str,
-    ) -> Tuple[int, int, int]:
+    ) -> Tuple[int, int, int, int]:
         """
-        Mint a new position in the pool. In addition to the amounts used, it also
-        returns the NFT position ID used to lookup the position.
+        Mint a new IN RANGE position in the pool. To simplify adding
+        liquidity (correctly), it will ensure the price range entered is within
+        range of the current price.  An invalid price range will throw an assertion
+        error.
+
+        Current price is based on token1/token0. The low and high price range for
+        minting, should be based on this ratio.
+        For example, if token0 price is 2000 and token1 price is 1. Then a price
+        range of 1900 - 2100 would be specified as 1/9000 - 1/2100.
 
         Args:
-            token0_amount: float, amount of token0 to mint
-            token1_amount: float, amount of token1 to mint
-            low_price: float, low price range for the position
-            high_price: float, high price range for the position
-            agent, str, the wallet address of the caller
+            - token0_amount: float, amount of token0 to mint
+            - token1_amount: float, amount of token1 to mint
+            - low_price: float, low price range for the position
+            - high_price: float, high price range for the position
+            - agent, str, the wallet address of the caller
 
         Returns:
-            int, actual amount used for token0
-            int, actual amount used for token1
-            int, NFT token ID
+            - actual amount used for token0
+            - actual amount used for token1
+            - amount of liquidity provided
+            - NFT token ID
         """
-        bal0, bal1 = self.token_pair_balance(agent)
-        assert bal0 >= token0_amount and bal1 >= token1_amount, "insufficient balance"
+        # check tick range first by converting prices to ticks
+        _, current_tick = self.get_sqrtp_tick()
 
-        # check token addresses are sorted.  This is done automatically when creating the pool
-        assert are_sorted_tokens(
-            self.token0.address, self.token1.address
-        ), "token pair are not sorted"
+        spacing = get_spacing_for_fee(self.fee)
+        lt = price_to_tick_with_spacing(low_price, spacing)
+        ht = price_to_tick_with_spacing(high_price, spacing)
+
+        if not is_valid_tick(lt):
+            raise Exception(f"Mint position: {lt} is not a valid tick")
+        if not is_valid_tick(ht):
+            raise Exception(f"Mint position: {ht} is not a valid tick")
+
+        # sort for negative integers
+        if lt > ht:
+            lowtick = ht
+            hightick = lt
+        else:
+            lowtick = lt
+            hightick = ht
+
+        assert (
+            lowtick <= current_tick and hightick >= current_tick
+        ), "Mint position: Out of range prices"
 
         t0amt = as_18(token0_amount)
         t1amt = as_18(token1_amount)
 
-        # adjust and sort ticks
-        spacing = get_spacing_for_fee(self.fee)
-        lowtick = price_to_tick_with_spacing(1e18 / as_18(low_price), spacing)
-        hightick = price_to_tick_with_spacing(1e18 / as_18(high_price), spacing)
-        if lowtick > hightick:
-            lowtick, hightick = hightick, lowtick
+        bal0 = self.token_contract.at(self.token0).balanceOf.call(agent)
+        bal1 = self.token_contract.at(self.token1).balanceOf.call(agent)
 
-        # approve the nft manager to move tokens on our behalf
-        self.token0.approve.transact(self.nftposition.address, t0amt, caller=agent)
-        self.token1.approve.transact(self.nftposition.address, t1amt, caller=agent)
+        assert (
+            bal0 >= t0amt and bal1 >= t1amt
+        ), "Mint position: Insufficient token balance. You need to mint more tokens"
+
+        self.token_contract.at(self.token0).approve.transact(
+            self.nftposition.address, t0amt, caller=agent
+        )
+        self.token_contract.at(self.token1).approve.transact(
+            self.nftposition.address, t1amt, caller=agent
+        )
 
         # mint the liquidity
-        token_id, _liq, a0, a1 = self.nftposition.mint.transact(
+        token_id, liq, a0, a1 = self.nftposition.mint.transact(
             (
-                self.token0.address,
-                self.token1.address,
+                self.token0,
+                self.token1,
                 self.fee,
                 lowtick,
                 hightick,
@@ -303,11 +316,11 @@ class Pool:
                 0,
                 agent,
                 int(2e34),
-            ),  # the 2000... number is just a deadline we set high
+            ),
             caller=agent,
         ).output
 
-        return (a0, a1, token_id)
+        return (from_18(a0), from_18(a1), liq, token_id)
 
     def get_liquidity_position(self, token_id: int) -> Tuple[int, int, int, int]:
         """
@@ -328,6 +341,19 @@ class Pool:
             token_id
         )
         return fee, tl, tu, liq
+
+    def get_amount_by_liquidity_position(self, token_id: int):
+        """
+        Return the amount of tokens (x,y) for a given liquidity position.
+        Note: this will not be exact as the pool hold some of the
+        liquidity for fees.
+        """
+        _, tl, tu, liq = self.get_liquidity_position(token_id)
+        _, ct = self.get_sqrtp_tick()
+        lp = tick_to_price(tl)
+        up = tick_to_price(tu)
+        cp = tick_to_price(ct)
+        return calculate_liquidity_balance(liq, lp, up, cp)
 
     def increase_liquidity(
         self,
@@ -355,13 +381,17 @@ class Pool:
         amt1 = as_18(amount1)
 
         # approve the nft manager to move tokens on our behalf
-        self.token0.approve.transact(self.nftposition.address, amt0, caller=agent)
-        self.token1.approve.transact(self.nftposition.address, amt1, caller=agent)
+        self.token_contract.at(self.token0).approve.transact(
+            self.nftposition.address, amt0, caller=agent
+        )
+        self.token_contract.at(self.token1).approve.transact(
+            self.nftposition.address, amt1, caller=agent
+        )
 
         liq, a0, a1 = self.nftposition.increaseLiquidity.transact(
             (token_id, amt0, amt1, 0, 0, EXECUTE_SWAP_DEADLINE), caller=agent
         ).output
-        return (liq, a0, a1)
+        return (liq, from_18(a0), from_18(a1))
 
     def remove_liquidity(
         self, token_id: int, percentage: float, agent: str
@@ -401,7 +431,8 @@ class Pool:
             (token_id, agent, t0owed, t1owed), caller=agent
         )
 
-        return result.output
+        amt0, amt1 = result.output
+        return (from_18(amt0), from_18(amt1))
 
     def swap_0_for_1(self, amount: float, agent: str) -> Tuple[float, float]:
         """
@@ -428,7 +459,9 @@ class Pool:
         amount_in = as_18(amount)
 
         # approve the router to move token's on behalf of the agent
-        self.token0.approve.transact(self.router.address, amount_in, caller=agent)
+        self.token_contract.at(self.token0).approve.transact(
+            self.router.address, amount_in, caller=agent
+        )
 
         recv = self.router.exactInputSingle.transact(
             (
@@ -443,7 +476,7 @@ class Pool:
             ),
             caller=agent,
         )
-        return (amount_in, recv.output)
+        return (from_18(amount_in), from_18(recv.output))
 
     def swap_1_for_0(self, amount, agent):
         """
@@ -470,7 +503,9 @@ class Pool:
         amount_in = as_18(amount)
 
         # approve the router to move token's on behalf of the agent
-        self.token1.approve.transact(self.router.address, amount_in, caller=agent)
+        self.token_contract.at(self.token1).approve.transact(
+            self.router.address, amount_in, caller=agent
+        )
 
         recv = self.router.exactInputSingle.transact(
             (
@@ -485,5 +520,4 @@ class Pool:
             ),
             caller=agent,
         )
-
-        return (amount_in, recv.output)
+        return (from_18(amount_in), from_18(recv.output))

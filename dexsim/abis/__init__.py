@@ -10,7 +10,7 @@ UNISWAP_SWAP_ROUTER = "0xE592427A0AEce92De3Edee1F18E0157C05861564"
 UNISWAP_NFPOSTION_MANAGER = "0xC36442b4a4522E871399CD717aBDD847Ab11FE88"
 
 
-def uniswap_token(evm):
+def erc20_token(evm):
     """
     Generic ERC20 contract to be used for tokens
     """

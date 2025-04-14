@@ -1,0 +1,14 @@
+# ******* DO NOT EDIT ********
+# Pre-deployed tokens.
+usdc:
+  symbol: usdc
+  address: "0x5f4e6ec37B96c8e960A233899135930F43bdE009"
+dai:
+  symbol: dai
+  address: "0xD20926ca613E2EEDA20430282343c1791D422046"
+weth:
+  symbol: weth
+  address: "0xe7D9A443421ee98728A32488d6f34726D760cAF3"
+wbtc:
+  symbol: wbtc
+  address: "0xfe37b3f873A52678bdF000811B91b2D2c8C03CF8"

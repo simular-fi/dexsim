@@ -34,7 +34,7 @@ simulator:
       price: 1.0
 ```
 
-### Create an interact with a Uniswap DEX
+### Create and interact with a Uniswap DEX
 
 ```python
 from dexsim.dex import DEX

@@ -2,7 +2,7 @@ import pytest
 from pathlib import Path
 
 from simular import create_account
-from dexsim.snapshot import load_evm_from_snapshot
+from dexsim.snapshot import evm_from_pool_snapshot
 
 PACKAGEDIR = Path(__file__).parent.absolute()
 TEST_CONFIG_FILE = PACKAGEDIR.joinpath("testconfig.yaml")
@@ -18,10 +18,5 @@ def config_filename():
 
 
 @pytest.fixture
-def snapshot_evm():
-    return load_evm_from_snapshot()
-
-
-@pytest.fixture
-def deployer(snapshot_evm):
-    return create_account(snapshot_evm, value=int(1000e18))
+def evm():
+    return evm_from_pool_snapshot()

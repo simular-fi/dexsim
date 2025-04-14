@@ -1,36 +1,5 @@
 simulator:
-  # Do not change. Only valid Uniswap v3 fee range
-  fees:
-    - 0.01
-    - 0.05
-    - 0.30
-    - 1.0
-
   pools:
-    eth_usdc:
-      tokens:
-        0: "usdc"
-        1: "eth"
-      fee: ${simulator.fees[2]}
-      price: 3000.00
-    dia_usdc:
-      tokens:
-        0: "dia"
-        1: "usdc"
-      fee: ${simulator.fees[0]}
-      price: 1.0
-
-  model:
-    steps: 500
-
-  agents:
-    lp:
-      num: 10
-      fund:
-        dia: 10_000
-        usdc: 10_000
-      initial_position:
-        dia: 1000
-        usdc: 1000
-        range: [[0.98, 1.0], [0.99, 1.1]]
-      liquidity_range: [500, 100]
+    usdc_dai_100: [1, 1]
+    usdc_weth_500: [5000, 1]
+    weth_wbtc_500: [16, 1]

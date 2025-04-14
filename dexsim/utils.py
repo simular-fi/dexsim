@@ -12,6 +12,31 @@ MIN_TICK = -887272
 MAX_TICK = 887272
 
 
+# Uniswap v3 fee schedule and spacing
+FEE_RANGE = [100, 500, 3000, 10_000]
+FEE_TICK_SPACING = [1, 10, 60, 200]
+
+
+def is_valid_tick(tick: int):
+    return tick >= MIN_TICK and tick <= MAX_TICK
+
+
+def get_spacing_for_fee(fee: int) -> int:
+    """
+    Return the tick spacing for the given fee
+    """
+    assert fee in FEE_RANGE, "not a valid fee"
+    return FEE_TICK_SPACING[FEE_RANGE.index(fee)]
+
+
+def get_fee_for_spacing(spacing: int) -> int:
+    """
+    Return the fee for the given tick spacing
+    """
+    assert spacing in FEE_TICK_SPACING, "not a valid tick spacing"
+    return FEE_RANGE[FEE_TICK_SPACING.index(spacing)]
+
+
 def as_18(value: float) -> int:
     """
     Convert a price into 18 decimal places
