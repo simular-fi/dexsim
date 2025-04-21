@@ -1,5 +1,3 @@
-import pytest
-
 from dexsim import DEX
 
 
@@ -45,7 +43,7 @@ def test_mint_tokens(config_filename):
     assert (14_000, 1) == dex.pools.usdc_weth_500.token_pair_balance(bob)
     assert (14_000, 10_000) == dex.pools.usdc_dai_100.token_pair_balance(bob)
 
-    # burn all usdc an dai
+    # burn all usdc and dai
     dex.pools.usdc_dai_100.burn_tokens(14_000, 10_000, bob)
     assert (0, 1) == dex.pools.usdc_weth_500.token_pair_balance(bob)
     assert (0, 0) == dex.pools.usdc_dai_100.token_pair_balance(bob)
@@ -77,15 +75,7 @@ def test_usdc_weth_liquidity(config_filename):
     assert (
         9667.92025496101,
         1.9920153358026262,
-    ) == dex.pools.usdc_weth_500.get_amount_by_liquidity_position(tid)
-
-
-def test_bad_mint_range(config_filename):
-    dex = DEX(config_filename)
-    bob = dex.create_wallet()
-    dex.pools.usdc_weth_500.mint_tokens(15_000, 3, bob)
-    with pytest.raises(Exception):
-        dex.pools.usdc_weth_500.mint_liquidity_position(10000, 2, 4900, 5100, bob)
+    ) == dex.pools.usdc_weth_500.get_amounts_by_liquidity_position(tid)
 
 
 def test_weth_wbtc_liquidity(config_filename):
@@ -110,7 +100,7 @@ def test_weth_wbtc_liquidity(config_filename):
     assert (
         16.099412275209396,
         0.5293899559561913,
-    ) == dex.pools.weth_wbtc_500.get_amount_by_liquidity_position(tid)
+    ) == dex.pools.weth_wbtc_500.get_amounts_by_liquidity_position(tid)
 
 
 def test_increase_decrease_liquidity(config_filename):
@@ -141,4 +131,57 @@ def test_increase_decrease_liquidity(config_filename):
 
 
 def test_swaps(config_filename):
-    pass
+    dex = DEX(config_filename)
+    lp = dex.create_wallet()
+    bob = dex.create_wallet()
+    pool = dex.pools.usdc_dai_100
+    pool.mint_tokens(10_000, 10_000, lp)
+    pool.mint_tokens(1000, 0, bob)
+
+    _, _, liq, _ = pool.mint_liquidity_position(1000, 1000, 0.98, 1.10, lp)
+    assert liq > 0
+
+    # bob swaps usdc for dai: 0 => 1
+    i0, o0 = pool.swap_0_for_1(100, bob)
+    assert i0 == 100
+    assert o0 == 99.52694458830966
+
+    t0bal, t1bal = pool.token_pair_balance(bob)
+    assert t0bal == 900
+    assert t1bal == o0
+
+    # bob swaps dai for usdc: 1 => 0
+    i1, o1 = pool.swap_1_for_0(10, bob)
+    assert i1 == 10
+    assert o1 == 10.08754327384422
+
+
+def test_track_liquidity(config_filename):
+    dex = DEX(config_filename)
+    bob = dex.create_wallet()
+    dex.pools.usdc_weth_500.mint_tokens(100_000, 20, bob)
+
+    # 3 positions
+    _, _, _, id1 = dex.pools.usdc_weth_500.mint_liquidity_position(
+        10000, 2, 1 / 4900, 1 / 5100, bob
+    )
+    assert (
+        9667.92025496101,
+        1.9920153358026262,
+    ) == dex.pools.usdc_weth_500.get_amounts_by_liquidity_position(id1)
+
+    _, _, _, id2 = dex.pools.usdc_weth_500.mint_liquidity_position(
+        10000, 2, 1 / 5000, 1 / 5200, bob
+    )
+    assert (
+        0.0,
+        2.000000000000721,
+    ) == dex.pools.usdc_weth_500.get_amounts_by_liquidity_position(id2)
+
+    _, _, _, id3 = dex.pools.usdc_weth_500.mint_liquidity_position(
+        10000, 2, 1 / 5100, 1 / 5300, bob
+    )
+    assert (
+        0.0,
+        2.000000000000719,
+    ) == dex.pools.usdc_weth_500.get_amounts_by_liquidity_position(id3)

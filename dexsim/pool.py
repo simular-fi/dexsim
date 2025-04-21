@@ -125,10 +125,13 @@ class Pool:
         """
         return self.pool_contract.liquidity.call()
 
-    def get_amount_to_target(self, tick):
-        spacing = get_spacing_for_fee(self.fee)
+    def net_liquidity(self, tick: int) -> Tuple[int, bool]:
+        """
+        Return the net liquidity when crossing the given tick.
+        In some cases this may be zero or negative.
+        """
         (
-            _liqGrs,
+            _,
             liqNet,
             _,
             _,
@@ -137,8 +140,7 @@ class Pool:
             _,
             initialized,
         ) = self.pool_contract.ticks.call(tick)
-
-        return liqNet, initialized
+        return (liqNet, initialized)
 
     def exchange_rates(self) -> Tuple[float, float]:
         """
@@ -281,10 +283,6 @@ class Pool:
             lowtick = lt
             hightick = ht
 
-        assert (
-            lowtick <= current_tick and hightick >= current_tick
-        ), "Mint position: Out of range prices"
-
         t0amt = as_18(token0_amount)
         t1amt = as_18(token1_amount)
 
@@ -342,7 +340,7 @@ class Pool:
         )
         return fee, tl, tu, liq
 
-    def get_amount_by_liquidity_position(self, token_id: int):
+    def get_amounts_by_liquidity_position(self, token_id: int):
         """
         Return the amount of tokens (x,y) for a given liquidity position.
         Note: this will not be exact as the pool hold some of the
@@ -465,8 +463,8 @@ class Pool:
 
         recv = self.router.exactInputSingle.transact(
             (
-                self.token0.address,
-                self.token1.address,
+                self.token0,
+                self.token1,
                 self.fee,
                 agent,
                 EXECUTE_SWAP_DEADLINE,
@@ -509,8 +507,8 @@ class Pool:
 
         recv = self.router.exactInputSingle.transact(
             (
-                self.token1.address,
-                self.token0.address,
+                self.token1,
+                self.token0,
                 self.fee,
                 agent,
                 EXECUTE_SWAP_DEADLINE,

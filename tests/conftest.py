@@ -1,7 +1,6 @@
 import pytest
 from pathlib import Path
 
-from simular import create_account
 from dexsim.snapshot import evm_from_pool_snapshot
 
 PACKAGEDIR = Path(__file__).parent.absolute()
