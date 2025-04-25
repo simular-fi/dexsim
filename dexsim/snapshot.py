@@ -8,11 +8,13 @@ from pathlib import Path
 from omegaconf import OmegaConf, DictConfig
 from simular import PyEvm, create_account
 
-from .utils import FEE_RANGE
-from .abis import (
+
+from dexsim import (
+    FEE_RANGE,
     uniswap_factory_contract,
     uniswap_nftpositionmanager,
     uniswap_router_contract,
+    uniswap_quoter,
     erc20_token,
 )
 
@@ -20,6 +22,7 @@ PACKAGEDIR = Path(__file__).parent.absolute()
 
 BASE_STATE = PACKAGEDIR.joinpath("state", "base.json")
 POOL_STATE = PACKAGEDIR.joinpath("state", "pool_snapshot.json")
+QUOTER_STATE = PACKAGEDIR.joinpath("state", "quoter_pool_snapshot.json")
 TOKENS = PACKAGEDIR.joinpath("state", "tokens.yaml")
 PAIRS = PACKAGEDIR.joinpath("state", "pairs.yaml")
 
@@ -48,7 +51,7 @@ def evm_from_snapshot(path_fn: str = BASE_STATE) -> PyEvm:
 
 def evm_from_pool_snapshot() -> PyEvm:
     """Load EVM state with pre-deployed pools from a snapshot"""
-    with open(POOL_STATE) as fh:
+    with open(QUOTER_STATE) as fh:
         return PyEvm.from_snapshot(fh.read())
 
 
@@ -159,5 +162,28 @@ def create_tokens_and_pools():
     # save snapshot
     print(" ... saving base state ...")
     snappools = evm.create_snapshot()
-    with open("./pool_snapshot.json", "w") as f:
+    with open(f"{POOL_STATE}", "w") as f:
         f.write(snappools)
+
+
+def deploy_quoter():
+    """
+    Deploy quoter contract to existing pool snapshot
+    """
+    factory = "0x1F98431c8aD98523631AE4a59f267346ea31F984"
+    weth = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+
+    with open("./abis/QuoterV2.bin") as f:
+        bits = bytes.fromhex(f.read())
+
+    evm = evm_from_pool_snapshot()
+    deployer = create_account(evm)
+
+    qouter = uniswap_quoter(evm, bits)
+    addy = qouter.deploy(factory, weth, caller=deployer)
+    print(addy)
+
+    print(" ... saving state ...")
+    snap = evm.create_snapshot()
+    with open(f"{QUOTER_STATE}", "w") as f:
+        f.write(snap)

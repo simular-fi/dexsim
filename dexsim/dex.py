@@ -85,7 +85,9 @@ class DEX:
                 raise Exception(
                     "Price values in the config file should be in the format '[price, price]'"
                 )
+            # calculate and set the SQRTP
             sqrtp = price_to_sqrtp(vals[1] / vals[0])
+
             self.pools[p] = Pool(
                 self.__evm,
                 token_pair.pool,

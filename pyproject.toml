@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "dexsim"
-version = "0.2.0"
+version = "0.2.1"
 description = 'API to create and interact with Uniswap based decentralized exchange'
 readme = "README.md"
 requires-python = ">=3.10"
@@ -31,7 +31,7 @@ classifiers = [
 dependencies = ["omegaconf", "simular-evm==0.3.0"]
 
 [tool.hatch.envs.default]
-dependencies = ["pytest"]
+dependencies = ["pytest", "pandas", "numpy"]
 
 [tool.hatch.envs.default.scripts]
 test = "pytest {args:tests}"
@@ -40,7 +40,7 @@ test = "pytest {args:tests}"
 python = ["3.10", "3.11"]
 
 [tool.hatch.build.targets.sdist]
-exclude = ["/.github", "/docs", "/tests"]
+exclude = ["/.github", "/docs", "/tests", "/example"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["dexsim"]

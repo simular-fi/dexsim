@@ -8,9 +8,10 @@ from eth_utils import is_address
 
 
 from . import Address
-from .abis import erc20_token
+from .abis import erc20_token, uniswap_quoter
 from .utils import (
     sqrtp_to_price,
+    price_to_sqrtp,
     price_to_tick_with_spacing,
     as_18,
     from_18,
@@ -107,6 +108,7 @@ class Pool:
             self.sqrtp, caller=self.deployers_address
         )
         self.token_contract = erc20_token(_evm)
+        self.pool_quoter = uniswap_quoter(_evm)
 
     def get_sqrtp_tick(self) -> Tuple[int, int]:
         """
@@ -147,8 +149,14 @@ class Pool:
         Prices in terms of the other.
         - The first value is the amount of token0 for 1 token1
         - Second value is the amount of token1 for 1 token0
+        Example: (0.98, 1.01) means:
+        - $0.98 worth of token0 to buy 1 token1
+        - $1.01 worth of token1 to buy 1 token 0
+        So in this example, token0 is more expensive.
         """
+        # this is alway y/x
         sqrtp, _ = self.get_sqrtp_tick()
+
         t1 = sqrtp_to_price(sqrtp)
         return (1 / t1, t1)
 
@@ -324,7 +332,7 @@ class Pool:
         """
         Get the liquidity position information for a given LP by the NFT token ID.
         You can extract the actual balances of each token by using the 'calculate_liquidity_balance'
-        function in utils.py
+        function in utils.py OR see below...
 
         Args:
             token_id: int, the NFT token id for the position.
@@ -519,3 +527,77 @@ class Pool:
             caller=agent,
         )
         return (from_18(amount_in), from_18(recv.output))
+
+    def increase_price_of_token0(
+        self, target_price: float, agent: Address
+    ) -> Tuple[float, float]:
+        """
+        Increase the price token0 to `target_price`.
+
+        This method will:
+        - calculate how much of token1 needs to be swapped to increase the price
+        - attempt to make the swap to move the price.
+
+        This amount received will be token0.
+
+        This will error if there's not enough liquidity or the caller does not
+        have enough tokens.
+
+        Args:
+            target_price: the future price of token0
+            agent: the caller
+
+        Returns:
+            (amount of token1 spent, amount of token0 recv)
+        """
+        liquidity = self.liquidity()
+        target = price_to_sqrtp(target_price)
+        current, _ = self.get_sqrtp_tick()
+
+        assert (
+            target > current
+        ), "Cannot increase the price. The target_price is <= current"
+
+        diff = target - current
+        amount_t1_to_swap = int(liquidity * diff / 2**96)
+
+        if amount_t1_to_swap <= 0:
+            return (0.0, 0.0)
+
+        return self.swap_1_for_0(from_18(amount_t1_to_swap), agent)
+
+    def decrease_price_of_token0(self, target_price, agent):
+        """
+        Decrease the price token0 to `target_price`.
+
+        This method will:
+        - calculate how much of token0 needs to be swapped to decrease the price
+        - attempt to make the swap to move the price.
+
+        This amount received will be token1.
+
+        This will error if there's not enough liquidity or the caller does not
+        have enough tokens.
+
+        Args:
+            target_price: the future price of token0
+            agent: the caller
+
+        Returns:
+            (amount of token0 spent, amount of token1 recv)
+        """
+        liquidity = self.liquidity()
+        target = price_to_sqrtp(target_price)
+        current, _ = self.get_sqrtp_tick()
+
+        assert (
+            current > target
+        ), "Cannot decrease the price. The target_price is > current"
+
+        diff = current - target
+        amount_t0_to_swap = int(liquidity * diff / 2**96)
+        if amount_t0_to_swap <= 0:
+            # this shouldn't happen
+            return (0.0, 0.0)
+
+        return self.swap_0_for_1(from_18(amount_t0_to_swap), agent)
