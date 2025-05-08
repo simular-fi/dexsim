@@ -1,4 +1,4 @@
-# DEXSim
+# DEXsim
 
 An API to create and interact with a local version of Uniswap v3.  This library
 use a pre-deployed version of Uniswap v3 along with a set of pre-deployed pools. It's intended for use in agent-based modeling or other simulation environments. It's also a useful tool in learning about how Uniswap works.
