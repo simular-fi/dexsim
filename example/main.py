@@ -60,6 +60,9 @@ if __name__ == "__main__":
     mu = 0
     external_usdc_price = [gbm(mu, volatility, steps, rng) for _ in range(steps)]
 
+    print("----------------------------------------------------------------")
+    print(f"looking for arb opportunities over {steps} steps, found the following:")
+    print("----------------------------------------------------------------")
     data = []
     for i in range(steps):
         # calculate the current DEX price
