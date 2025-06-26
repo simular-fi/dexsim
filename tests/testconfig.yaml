@@ -4,6 +4,8 @@ simulator:
     usdc_weth_500: [5000, 1]
     weth_wbtc_500: [16, 1]
   lending:
-    usdc_dai_100: usdc
+  # format => pool name : collateral token name
+  # For example this mean loans are enabled for the 'usdc_weth' pool
+  # and the collateral token is 'weth'
     usdc_weth_500: weth
  

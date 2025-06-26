@@ -58,16 +58,27 @@ class Lender:
 
         self._bootstrap_lending_capital(deployer)
 
+        self._testing_price = 0
+        self._testing_price_is_used = False
+
     def _bootstrap_lending_capital(self, agent: Address):
         """
         Provide lending capital for the pool
         """
-        self.mint_lending_token.transact(LENDING_CAPITAL, caller=agent)
+        self.mint_lending_token(LENDING_CAPITAL, agent)
 
         token_contract(self.evm).at(self.lending).approve.transact(
             self.lending_contract.address, LENDING_CAPITAL, caller=agent
         )
         self.lending_contract.supplyLendingToken.transact(LENDING_CAPITAL, caller=agent)
+
+    def set_price_for_testing(self, _price: int):
+        self._testing_price = as_18(_price)
+        self._testing_price_is_used = True
+
+    def clear_price_for_testing(self):
+        self._testing_price = 0
+        self.self._testing_price_is_used = False
 
     def _update_collateral_price(self):
         """
@@ -75,15 +86,22 @@ class Lender:
         in 1e18 format for lending contract. Update Price in
         Lending Contract
         """
-        slots = uniswap_pool_contract(self.evm, self.pool).slot0.call()
-        p = sqrtp_to_price(slots[0])
 
-        if self.which_is_collateral == 0:
-            price = as_18(1 / p)
+        if self._testing_price_is_used:
+            # be able to manually set the price for testing
+            self.lending_contract.setPrice.transact(
+                self._testing_price, caller=self.deployer
+            )
         else:
-            price = as_18(p)
+            slots = uniswap_pool_contract(self.evm, self.pool).slot0.call()
+            p = sqrtp_to_price(slots[0])
 
-        self.lending_contract.setPrice.transact(price, caller=self.deployer)
+            if self.which_is_collateral == 0:
+                price = as_18(1 / p)
+            else:
+                price = as_18(p)
+
+            self.lending_contract.setPrice.transact(price, caller=self.deployer)
 
     def mint_collateral_token(self, amount: int, agent: Address):
         """
@@ -164,18 +182,19 @@ class Lender:
             self.lending_contract.address, amt18, caller=agent
         )
         self.lending_contract.repayLoan.transact(amt18, caller=agent)
-        pass
 
-    def liquidate_loan(self, amount: int, agent: Address):
+    def liquidate_loan(self, borrower: Address, liquidator: Address):
         """
         Liquidate a loan.
         """
+        [_, amount, _] = self.loan_information(borrower)
         amt18 = as_18(amount)
+
         # Approve the loan contract to move money on agent's behalf
         token_contract(self.evm).at(self.lending).approve.transact(
-            self.lending_contract.address, amt18, caller=agent
+            self.lending_contract.address, amt18, caller=liquidator
         )
-        self.lending_contract.liquidateLoan.transact(amount, caller=agent)
+        self.lending_contract.liquidateLoan.transact(borrower, caller=liquidator)
         return True
 
     def loan_information(self, agent: Address):
@@ -205,3 +224,10 @@ class Lender:
         Does the 'borrower' have a loan?
         """
         return self.lending_contract.isActiveLoan.call(borrower)
+
+    def is_loan_healthy(self, borrower: Address):
+        """
+        Is the loan for the give borrower healthy?
+        """
+        (_, _, is_healthy) = self.lending_contract.loanInformation.call(borrower)
+        return is_healthy

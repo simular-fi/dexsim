@@ -80,7 +80,7 @@ class DEX:
         # initialize pools
         self.__router = uniswap_router_contract(self.__evm)
         self.__nft = uniswap_nftpositionmanager(self.__evm)
-        deployer = create_account(self.__evm)
+        self.deployer = create_account(self.__evm)
 
         for p, vals in self.config.pools.items():
             token_pair = pairs.get(p, None)
@@ -102,7 +102,7 @@ class DEX:
                 sqrtp,
                 self.__router,
                 self.__nft,
-                deployer,
+                self.deployer,
             )
 
         if self.config.get("lending"):
@@ -116,7 +116,7 @@ class DEX:
                 pool_address = pool_pair.pool
 
                 self.lending[k] = Lender(
-                    self.__evm, pair[0], pair[1], pair[2], pool_address, deployer
+                    self.__evm, pair[0], pair[1], pair[2], pool_address, self.deployer
                 )
         else:
             print("INFO: No 'lending' configured in the configuration file")
