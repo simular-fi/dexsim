@@ -8,6 +8,8 @@ from .utils import price_to_sqrtp
 from .snapshot import evm_from_pool_snapshot, load_token_pair_state
 from .abis import uniswap_router_contract, uniswap_nftpositionmanager
 
+from .lender import Lender
+
 
 def load_configuration(fn: str) -> DictConfig:
     if fn[-5:] != ".yaml":
@@ -33,7 +35,9 @@ class PoolsHelper(dict):
         try:
             return self[key]
         except KeyError:
-            raise AttributeError(f"'Pools' has no pool named: '{key}'")
+            raise AttributeError(
+                f"PoolHelper: 'DEX' has no pool or lending function named: '{key}'. Check the configuration file"
+            )
 
     def __setattr__(self, key, value):
         self[key] = value
@@ -71,6 +75,7 @@ class DEX:
         # load the config file
         self.config = load_configuration(conf_file)
         self.pools = PoolsHelper()
+        self.lending = PoolsHelper()
 
         # initialize pools
         self.__router = uniswap_router_contract(self.__evm)
@@ -99,6 +104,22 @@ class DEX:
                 self.__nft,
                 deployer,
             )
+
+        if self.config.get("lending"):
+            # Configure any lending pools IF the lending is specified in the config file
+            for k, v in self.config.lending.items():
+                pool_pair = pairs.get(k, None)
+                if pool_pair.token0.symbol == v:
+                    pair = (pool_pair.token0.address, pool_pair.token1.address, 0)
+                else:
+                    pair = (pool_pair.token1.address, pool_pair.token0.address, 1)
+                pool_address = pool_pair.pool
+
+                self.lending[k] = Lender(
+                    self.__evm, pair[0], pair[1], pair[2], pool_address, deployer
+                )
+        else:
+            print("INFO: No 'lending' configured in the configuration file")
 
     def create_wallet(self, address: str = None, wei: float = int(1e18)) -> str:
         """Create a single account

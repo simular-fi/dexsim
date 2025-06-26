@@ -68,3 +68,12 @@ def uniswap_quoter(evm):
         abi = f.read()
     abi = PyAbi.from_abi_bytecode(abi, None)
     return Contract(evm, abi).at(UNISWAP_QUOTER_V2)
+
+
+def lending_pool(evm):
+    """
+    Create a lending pool contract instance
+    """
+    with open(f"{PATH}/Lender.json") as f:
+        abi = f.read()
+    return contract_from_raw_abi(evm, abi)
