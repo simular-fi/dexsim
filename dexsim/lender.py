@@ -12,6 +12,7 @@ from .abis import lending_pool, uniswap_pool_contract
 from simular import Contract, create_account, contract_from_inline_abi
 
 
+# ABI helper
 def token_contract(evm):
     """helper to provide erc20 token interface"""
     return contract_from_inline_abi(
@@ -25,6 +26,8 @@ def token_contract(evm):
 
 
 # initial lending capital in the lending pool
+# We pre-boot the pool with lending capital to
+# simplify for modeling.
 LENDING_CAPITAL = as_18(1_000_000_000)
 
 
@@ -73,18 +76,25 @@ class Lender:
         self.lending_contract.supplyLendingToken.transact(LENDING_CAPITAL, caller=agent)
 
     def set_price_for_testing(self, _price: int):
+        """
+        Used solely for testing to force a price vs. getting it automatically from the associated Uniswap pool.
+        """
         self._testing_price = as_18(_price)
         self._testing_price_is_used = True
 
     def clear_price_for_testing(self):
+        """
+        Used to clear a forced price
+        """
         self._testing_price = 0
         self.self._testing_price_is_used = False
 
     def _update_collateral_price(self):
         """
-        Call the pool for collateral exchange price.  must be
-        in 1e18 format for lending contract. Update Price in
-        Lending Contract
+        Private method.
+
+        Calls the associated Uniswap pool for the current collateral exchange price.  Must be
+        in 1e18 format for lending contract. This is called automatically by the API.
         """
 
         if self._testing_price_is_used:
@@ -166,7 +176,7 @@ class Lender:
     def withdraw_collateral(self, agent: Address):
         """
         Withdraw all collateral.  You can only withdraw collateral if the
-        loan is paid in full. Collateral is transfer backed to the token
+        loan is paid in full. Collateral is transfered backed to the ERC20 token
         account of the caller.
         """
         self.lending_contract.withdrawCollateral.transact(caller=agent)
@@ -185,7 +195,11 @@ class Lender:
 
     def liquidate_loan(self, borrower: Address, liquidator: Address):
         """
-        Liquidate a loan.
+        Liquidate a loan.  A loan must be 'un-healthy' for this to happen.
+
+        An un-healthy loan is one in which the over-collateral threshold has
+        been violated.  For example, when a price change in the collateral drops
+        making the loan under-collateralized.
         """
         [_, amount, _] = self.loan_information(borrower)
         amt18 = as_18(amount)
@@ -206,14 +220,14 @@ class Lender:
 
     def available_to_loan(self):
         """
-        How much of the lending token is avaiable for loans?
+        How much of the lending token is avaiable to loan?
         """
         amt = self.lending_contract.availableToLend.call()
         return from_18(amt)
 
     def collateral_required(self, amount: int):
         """
-        How much collateral is require for a loan of 'amount'?
+        How much collateral is required for a loan of 'amount'?
         """
         self._update_collateral_price()
         amt18 = as_18(amount)

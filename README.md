@@ -64,7 +64,7 @@ _, _, _, nft_id = dex.pools.usdc_weth_500.mint_liquidity_position(
 
 ## Lending
  Each pool can also provide a lending pool for models.  Lending pools can be configured 
- along side the uniswap pools.  For example:
+ along with the uniswap pools.  For example:
 
  ```yaml
 simulator:
@@ -74,14 +74,13 @@ simulator:
   lending:
     usdc_weth_500: weth
 ```
+adds a lending pool for the USDC/WETH pair. It specifies that `weth` is the **collateral** token.  
 
-adds a lending pool for the USDC/WETH pair. It specifies the `weth` is the collateral token.  The format 
-for configuring lending pools is: `uniswap pool name : name of collateral token`.
+The format for configuring a lending pool is a key/value pair, where the key is the uniswap pool name and the value is the name of the collateral token.  For example: `uniswap pool name : name of collateral token`.
 
-When the `dex` is started it will automtically configure and create the uniswap and lending pools. Working with 
-the lending API is very similar to working with pools....
+When the `dex` is started it will automtically configure and create any specified uniswap and lending pools. Interacting with the lending API is very similar to working with pools.
 
-Example using the configuration above where the lending is available for the `usdc_weth_500` pool and
+Here's an example using the configuration above where lending is available for the `usdc_weth_500` pool and
 the collateral token is `weth`
 
 ```python
@@ -111,7 +110,7 @@ dex.lending.usdc_weth_500.provide_collateral(weth_needed, agent)
 # take loan
 dex.lending.usdc_weth_500.borrow(BORROW_AMOUNT, agent)
 
-# check loan information (value are in 1e18 format)
+# check loan information (value are returned in 1e18 format)
 assert [
     2500000000000000000,
     10000000000000000000000,
@@ -122,6 +121,7 @@ assert [
 assert 10_000 == dex.lending.usdc_weth_500.lending_token_balance(agent)
 ```
 
+**See `dexsim/lender.py` for all the functionality.**
 
-**See `tests/` for several examples of use.**
+**See `tests/` for several examples of using both pool and lending APIs.**
 
